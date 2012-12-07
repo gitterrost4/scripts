@@ -1,0 +1,55 @@
+#!/usr/bin/perl
+use strict;
+my @lines = `curl -s www.gw2spidy.com/item/$ARGV[0]`;
+my $name = "";
+my $sell_price = "";
+my $sell_price_num = "";
+my $buy_price = "";
+my $buy_price_num = "";
+my $supply = "";
+my $demand = "";
+while($_ = shift(@lines)) { 
+    if(/<title>(.*) \| GW2Spidy<\/title>/){
+        $name = "$1";
+        $name =~ s/&#039;/'/;
+    } elsif(/Sell Price/) {
+        $_ = shift(@lines);
+        s/<[^>]*>//g;
+        s/&[^;]*;//g;
+        s/\s//g;
+        /(([0-9]*)g)?(([0-9]*)s)?(([0-9]*)c)?/;
+        $sell_price_num = $2*10000 + $4*100 +$6;
+        $sell_price = $_;
+    } elsif(/Buy Price/) {
+        $_ = shift(@lines);
+        s/<[^>]*>//g;
+        s/&[^;]*;//g;
+        s/\s//g;
+        /(([0-9]*)g)?(([0-9]*)s)?(([0-9]*)c)?/;
+        $buy_price_num = $2*10000 + $4*100 +$6;
+        $buy_price = $_;
+    } elsif(/Supply/) {
+        $_ = shift(@lines);
+        s/<[^>]*>//g;
+        s/&[^;]*;//g;
+        s/\s//g;
+        $supply = $_;
+    } elsif(/Demand/) {
+        $_ = shift(@lines);
+        s/<[^>]*>//g;
+        s/&[^;]*;//g;
+        s/\s//g;
+        $demand = $_;
+    }
+}
+my $margin = sprintf("%.0f",$sell_price_num*0.85 - $buy_price_num);
+my $perc = "";
+if($buy_price_num){
+    $perc = sprintf("%.0f",$margin/$buy_price_num * 100);
+} else {
+    $perc = "-";
+}
+
+if($name){
+    printf("%50s | SP: %9s | BP: %9s | M: %9s | P: %9s | D: %9s | S: %9s\n", $name, $sell_price, $buy_price, $margin, $perc, $demand, $supply);
+}
