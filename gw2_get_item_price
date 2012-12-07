@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 use strict;
-my @lines = `curl -s www.gw2spidy.com/item/$ARGV[0]`;
+my @types = (0,2,3,4,5,6,7,11,13,15,16,17,18);
 my $name = "";
 my $sell_price = "";
 my $sell_price_num = "";
@@ -8,48 +8,74 @@ my $buy_price = "";
 my $buy_price_num = "";
 my $supply = "";
 my $demand = "";
-while($_ = shift(@lines)) { 
-    if(/<title>(.*) \| GW2Spidy<\/title>/){
-        $name = "$1";
-        $name =~ s/&#039;/'/;
-    } elsif(/Sell Price/) {
-        $_ = shift(@lines);
-        s/<[^>]*>//g;
-        s/&[^;]*;//g;
-        s/\s//g;
-        /(([0-9]*)g)?(([0-9]*)s)?(([0-9]*)c)?/;
-        $sell_price_num = $2*10000 + $4*100 +$6;
-        $sell_price = $_;
-    } elsif(/Buy Price/) {
-        $_ = shift(@lines);
-        s/<[^>]*>//g;
-        s/&[^;]*;//g;
-        s/\s//g;
-        /(([0-9]*)g)?(([0-9]*)s)?(([0-9]*)c)?/;
-        $buy_price_num = $2*10000 + $4*100 +$6;
-        $buy_price = $_;
-    } elsif(/Supply/) {
-        $_ = shift(@lines);
-        s/<[^>]*>//g;
-        s/&[^;]*;//g;
-        s/\s//g;
-        $supply = $_;
-    } elsif(/Demand/) {
-        $_ = shift(@lines);
-        s/<[^>]*>//g;
-        s/&[^;]*;//g;
-        s/\s//g;
-        $demand = $_;
+my @item_array = ();
+OUTER: foreach my $type (@types){
+    for(my $page =1; 1; $page++){ #intentional infloop
+        my @lines = `curl -s http://www.gw2spidy.com/type/$type/-1/$page?sort_name=asc`;
+        while($_ = shift(@lines)) { 
+            if(/<title>[^|]*\|[^|]*\| Page ([0-9]*)/){
+                if($page != $1){
+                    next OUTER;
+                }
+            }
+            my %newitem = {};
+            if(/^\s*<img[^>]*>(.*)/){
+                $name = "$1";
+                $name =~ s/&#039;/'/;
+            } elsif(/min_sale_unit_price" title/) {
+                s/<[^>]*>//g;
+                s/&[^;]*;//g;
+                s/\s//g;
+                /(([0-9]*)g)?(([0-9]*)s)?(([0-9]*)c)?/;
+                $sell_price_num = $2*10000 + $4*100 +$6;
+                $sell_price = $_;
+                $_ = shift(@lines);
+                s/<[^>]*>//g;
+                s/&[^;]*;//g;
+                s/\s//g;
+                /(([0-9]*)g)?(([0-9]*)s)?(([0-9]*)c)?/;
+                $buy_price_num = $2*10000 + $4*100 +$6;
+                $buy_price = $_;
+                $_ = shift(@lines);
+                s/<[^>]*>//g;
+                s/&[^;]*;//g;
+                s/\s//g;
+                $supply = $_;
+                $_ = shift(@lines);
+                s/<[^>]*>//g;
+                s/&[^;]*;//g;
+                s/\s//g;
+                $demand = $_;
+                my $margin_num = sprintf("%.0f",$sell_price_num*0.85 - $buy_price_num);
+                my $margin = "";
+                if(int($margin_num/10000) > 0){
+                    $margin .= int($margin_num/10000)."g";
+                }
+                if(int(($margin_num%10000)/100) > 0){
+                    $margin .= int(($margin_num%10000)/100)."s";
+                }
+                $margin .= ($margin_num%100)."c";
+                my $perc = "";
+                if($buy_price_num){
+                    $perc = sprintf("%.0f",$margin_num/$buy_price_num * 100);
+                } else {
+                    $perc = "-";
+                }
+                my $newitem = {'name'=>$name, 'sell_price_num'=>$sell_price_num, 'sell_price'=>$sell_price, 'buy_price_num'=>$buy_price_num, 'buy_price'=>$buy_price, 'supply'=>$supply, 'demand'=>$demand, 'margin'=>$margin, 'margin_num'=>$margin_num, 'perc'=>$perc};
+                push @item_array, $newitem;
+            }
+        }
+        @item_array = sort { (($$b{'buy_price_num'}*$$b{'perc'})*($$b{'demand'}+($$b{'supply'}+1))) <=> (($$a{'buy_price_num'}*$$a{'perc'})*($$a{'demand'}+($$a{'supply'}+1))) } @item_array;
+        print "\033[2J";    #clear the screen
+        print "\033[0;0H"; #jump to 0,0
+        my $k = 0;
+        foreach(@item_array){
+            if($_->{'name'} && $k<48 && $_->{'supply'} > 100 && $_->{'demand'} > 100 && $_->{'perc'}<500){
+                printf("%50s | SP: %9s | BP: %9s | M: %9s | P: %9s | D: %9s | S: %9s\n", $_->{'name'}, $_->{'sell_price'}, $_->{'buy_price'}, $_->{'margin'}, $_->{'perc'}, $_->{'demand'}, $_->{'supply'});
+            $k++;
+            }
+        }
+        print "Type $type, Page $page\n";
     }
 }
-my $margin = sprintf("%.0f",$sell_price_num*0.85 - $buy_price_num);
-my $perc = "";
-if($buy_price_num){
-    $perc = sprintf("%.0f",$margin/$buy_price_num * 100);
-} else {
-    $perc = "-";
-}
 
-if($name){
-    printf("%50s | SP: %9s | BP: %9s | M: %9s | P: %9s | D: %9s | S: %9s\n", $name, $sell_price, $buy_price, $margin, $perc, $demand, $supply);
-}
